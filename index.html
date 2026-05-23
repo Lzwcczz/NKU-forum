@@ -326,9 +326,8 @@
 
     <script>
         // ==================== Supabase 配置 ====================
-        // 请替换为你自己的 Supabase 项目 URL 和 anon key
-        const SUPABASE_URL = 'https://ubohnrkkqjyqcunzcksw.supabase.co';
-        const SUPABASE_ANON_KEY = 'sb_publishable_Q2pCEk8bsHOzQvqr971qAw_ZuiA6ncJ';
+        const SUPABASE_URL = 'https://pimmudwmnuuapuozwurg.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_eP8qq19aiFWe6ZdHN7EEPg_emrZkVJf';
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         // ==================== 数据状态 ====================
@@ -1159,7 +1158,6 @@
             closeModal('profileModal');
             showToast('个人信息保存成功', 'success');
 
-            // 只在信息真正有变化时才后台同步历史帖子和评论，避免无意义的请求
             if (name !== oldName || college !== oldCollege || gender !== oldGender) {
                 Promise.all([
                     supabaseClient.from('posts').update({ author_name: name, author_college: college, author_gender: gender }).eq('author_id', currentUserId),
