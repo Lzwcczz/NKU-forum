@@ -146,7 +146,7 @@
             </main>
 
             <!-- 右侧边栏 -->
-            <aside class="hidden xl:block w-80 flex-shrink-0">
+            <aside class="hidden lg:block w-80 flex-shrink-0">
                 <div class="bg-gradient-to-br from-purple-700 to-indigo-800 rounded-2xl shadow-lg p-6 text-white mb-4">
                     <h3 class="font-bold text-lg mb-2">南开大学算法导论课程</h3>
                     <p class="text-purple-100 text-sm mb-4 leading-relaxed">
@@ -428,6 +428,8 @@
                 liked: likedPostIds.includes(p.id),
                 isTop: false,
                 author_id: p.author_id,
+                author_college: p.author_college || '',
+                author_gender: p.author_gender || '',
                 created_at: p.created_at,
                 commentList: []
             }));
@@ -454,6 +456,8 @@
                 post_id: c.post_id,
                 author: c.author_name,
                 author_id: c.author_id,
+                author_college: c.author_college || '',
+                author_gender: c.author_gender || '',
                 content: c.content,
                 likes: c.likes || 0,
                 liked: likedCommentIds.includes(c.id),
@@ -636,15 +640,17 @@
             const scores = {};
             posts.forEach(p => {
                 if (!p.author_id) return;
-                if (!scores[p.author_id]) scores[p.author_id] = { name: p.author, likes: 0 };
+                if (!scores[p.author_id]) scores[p.author_id] = { name: p.author, likes: 0, college: p.author_college };
                 scores[p.author_id].likes += p.likes || 0;
                 scores[p.author_id].name = p.author;
+                if (p.author_college) scores[p.author_id].college = p.author_college;
             });
             allComments.forEach(c => {
                 if (!c.author_id) return;
-                if (!scores[c.author_id]) scores[c.author_id] = { name: c.author, likes: 0 };
+                if (!scores[c.author_id]) scores[c.author_id] = { name: c.author, likes: 0, college: c.author_college };
                 scores[c.author_id].likes += c.likes || 0;
                 scores[c.author_id].name = c.author;
+                if (c.author_college) scores[c.author_id].college = c.author_college;
             });
 
             const topUsers = Object.entries(scores)
@@ -667,7 +673,7 @@
                     <div class="w-10 h-10 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-sm">${user.name ? user.name.charAt(0) : '匿'}</div>
                     <div class="flex-1 min-w-0">
                         <div class="text-sm font-medium text-gray-800 truncate">${user.name || '匿名'}</div>
-                        <div class="text-xs text-gray-400">获赞 ${user.likes}</div>
+                        <div class="text-xs text-gray-400">${user.college ? user.college + ' · ' : ''}获赞 ${user.likes}</div>
                     </div>
                 </div>
             `).join('');
@@ -789,6 +795,7 @@
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center gap-2 mb-1.5 flex-wrap">
                                 <span class="font-bold text-gray-900 text-sm">${post.author}</span>
+                                ${post.author_college || post.author_gender ? `<span class="text-xs text-gray-400">${[post.author_college, post.author_gender].filter(Boolean).join(' · ')}</span>` : ''}
                                 <span class="px-2 py-0.5 rounded-lg ${cat.color} text-xs font-medium flex items-center gap-1">
                                     <i class="fas ${cat.icon} text-[10px]"></i> ${cat.name}
                                 </span>
@@ -929,6 +936,7 @@
                                 <div class="flex-1 bg-gray-50 rounded-xl rounded-tl-none p-3">
                                     <div class="flex items-center gap-2 mb-1">
                                         <span class="font-bold text-sm text-gray-800">${c.author || '匿名'}</span>
+                                        ${c.author_college || c.author_gender ? `<span class="text-xs text-gray-400">${[c.author_college, c.author_gender].filter(Boolean).join(' · ')}</span>` : ''}
                                         <span class="text-xs text-gray-400">${c.time}</span>
                                         <button onclick="event.stopPropagation(); toggleCommentLike(${c.id}, ${post.id})" class="like-btn flex items-center gap-1 text-xs ml-auto ${c.liked ? 'liked text-red-500' : 'text-gray-400 hover:text-red-500'} transition-colors">
                                             <i class="${c.liked ? 'fas' : 'far'} fa-heart"></i>
@@ -975,6 +983,8 @@
                 post_id: postId,
                 author_name: commenterName,
                 author_id: currentUserId,
+                author_college: userProfile.college || '',
+                author_gender: userProfile.gender || '',
                 content: content
             });
             if (error) {
@@ -1013,6 +1023,8 @@
                 category: category,
                 author_name: displayName,
                 author_id: currentUserId,
+                author_college: userProfile.college || '',
+                author_gender: userProfile.gender || '',
                 likes: 0,
                 views: 0
             });
@@ -1091,7 +1103,7 @@
             openModal('profileModal');
         }
 
-        function saveProfile() {
+        async function saveProfile() {
             const name = document.getElementById('profileName').value.trim();
             const studentId = document.getElementById('profileStudentId').value.trim();
             const college = document.getElementById('profileCollege').value;
@@ -1106,9 +1118,15 @@
             }
             userProfile = { name, studentId, college, gender };
             saveLocalProfile();
+
+            // 同步更新所有帖子和评论的姓名、学院、性别
+            await supabaseClient.from('posts').update({ author_name: name, author_college: college, author_gender: gender }).eq('author_id', currentUserId);
+            await supabaseClient.from('comments').update({ author_name: name, author_college: college, author_gender: gender }).eq('author_id', currentUserId);
+
             updateNavAvatar();
             closeModal('profileModal');
             showToast('个人信息保存成功', 'success');
+            await loadPosts();
         }
 
         function updateNavAvatar() {
