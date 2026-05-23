@@ -387,6 +387,12 @@
             return date.toLocaleDateString('zh-CN');
         }
 
+        function getGenderSymbol(gender) {
+            if (gender === '男') return '♂';
+            if (gender === '女') return '♀';
+            return '';
+        }
+
         function saveLocalProfile() {
             localStorage.setItem('nku-forum-userProfile', JSON.stringify(userProfile));
         }
@@ -430,6 +436,7 @@
                 author_id: p.author_id,
                 author_college: p.author_college || '',
                 author_gender: p.author_gender || '',
+                is_admin: p.is_admin || false,
                 created_at: p.created_at,
                 commentList: []
             }));
@@ -458,6 +465,7 @@
                 author_id: c.author_id,
                 author_college: c.author_college || '',
                 author_gender: c.author_gender || '',
+                is_admin: c.is_admin || false,
                 content: c.content,
                 likes: c.likes || 0,
                 liked: likedCommentIds.includes(c.id),
@@ -795,7 +803,8 @@
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center gap-2 mb-1.5 flex-wrap">
                                 <span class="font-bold text-gray-900 text-sm">${post.author}</span>
-                                ${post.author_college || post.author_gender ? `<span class="text-xs text-gray-400">${[post.author_college, post.author_gender].filter(Boolean).join(' · ')}</span>` : ''}
+                                ${post.is_admin ? '<span class="px-1.5 py-0.5 rounded bg-blue-100 text-blue-600 text-[10px] font-bold">管理员</span>' : ''}
+                                ${post.author_college || getGenderSymbol(post.author_gender) ? `<span class="text-xs text-gray-400">${[post.author_college, getGenderSymbol(post.author_gender)].filter(Boolean).join(' · ')}</span>` : ''}
                                 <span class="px-2 py-0.5 rounded-lg ${cat.color} text-xs font-medium flex items-center gap-1">
                                     <i class="fas ${cat.icon} text-[10px]"></i> ${cat.name}
                                 </span>
@@ -904,8 +913,11 @@
                     <div class="flex items-center gap-3 mb-4">
                         <div class="w-12 h-12 rounded-full ${post.avatarColor} flex items-center justify-center font-bold text-lg">${post.avatar}</div>
                         <div>
-                            <div class="font-bold text-gray-900">${post.author}</div>
-                            <div class="text-xs text-gray-400">${post.time}</div>
+                            <div class="font-bold text-gray-900 flex items-center gap-1.5">
+                                ${post.author}
+                                ${post.is_admin ? '<span class="px-1.5 py-0.5 rounded bg-blue-100 text-blue-600 text-[10px] font-bold">管理员</span>' : ''}
+                            </div>
+                            <div class="text-xs text-gray-400">${[post.author_college, getGenderSymbol(post.author_gender)].filter(Boolean).join(' · ')}${post.author_college || getGenderSymbol(post.author_gender) ? ' · ' : ''}${post.time}</div>
                         </div>
                         <span class="ml-auto px-2.5 py-1 rounded-lg ${cat.color} text-xs font-medium flex items-center gap-1">
                             <i class="fas ${cat.icon} text-[10px]"></i> ${cat.name}
@@ -936,7 +948,8 @@
                                 <div class="flex-1 bg-gray-50 rounded-xl rounded-tl-none p-3">
                                     <div class="flex items-center gap-2 mb-1">
                                         <span class="font-bold text-sm text-gray-800">${c.author || '匿名'}</span>
-                                        ${c.author_college || c.author_gender ? `<span class="text-xs text-gray-400">${[c.author_college, c.author_gender].filter(Boolean).join(' · ')}</span>` : ''}
+                                        ${c.is_admin ? '<span class="px-1 py-0.5 rounded bg-blue-100 text-blue-600 text-[10px] font-bold">管理员</span>' : ''}
+                                        ${c.author_college || getGenderSymbol(c.author_gender) ? `<span class="text-xs text-gray-400">${[c.author_college, getGenderSymbol(c.author_gender)].filter(Boolean).join(' · ')}</span>` : ''}
                                         <span class="text-xs text-gray-400">${c.time}</span>
                                         <button onclick="event.stopPropagation(); toggleCommentLike(${c.id}, ${post.id})" class="like-btn flex items-center gap-1 text-xs ml-auto ${c.liked ? 'liked text-red-500' : 'text-gray-400 hover:text-red-500'} transition-colors">
                                             <i class="${c.liked ? 'fas' : 'far'} fa-heart"></i>
@@ -985,6 +998,7 @@
                 author_id: currentUserId,
                 author_college: userProfile.college || '',
                 author_gender: userProfile.gender || '',
+                is_admin: isAdmin,
                 content: content
             });
             if (error) {
@@ -1025,6 +1039,7 @@
                 author_id: currentUserId,
                 author_college: userProfile.college || '',
                 author_gender: userProfile.gender || '',
+                is_admin: isAdmin,
                 likes: 0,
                 views: 0
             });
