@@ -992,17 +992,23 @@
 
             const commenterName = userProfile.name && userProfile.name.trim() ? userProfile.name.trim() : '匿名';
 
-            const { error } = await supabaseClient.from('comments').insert({
-                post_id: postId,
-                author_name: commenterName,
-                author_id: currentUserId,
-                author_college: userProfile.college || '',
-                author_gender: userProfile.gender || '',
-                is_admin: isAdmin,
-                content: content
-            });
-            if (error) {
-                showToast('评论失败: ' + error.message, 'error');
+            try {
+                const { error } = await supabaseClient.from('comments').insert({
+                    post_id: postId,
+                    author_name: commenterName,
+                    author_id: currentUserId,
+                    author_college: userProfile.college || '',
+                    author_gender: userProfile.gender || '',
+                    is_admin: isAdmin,
+                    content: content
+                });
+                if (error) {
+                    showToast('评论失败: ' + error.message, 'error');
+                    return;
+                }
+            } catch (e) {
+                console.error('评论异常', e);
+                showToast('网络请求失败，请检查控制台错误信息', 'error');
                 return;
             }
 
@@ -1031,20 +1037,26 @@
 
             const displayName = userProfile.name && userProfile.name.trim() ? userProfile.name.trim() : '匿名';
 
-            const { error } = await supabaseClient.from('posts').insert({
-                title: title,
-                content: content,
-                category: category,
-                author_name: displayName,
-                author_id: currentUserId,
-                author_college: userProfile.college || '',
-                author_gender: userProfile.gender || '',
-                is_admin: isAdmin,
-                likes: 0,
-                views: 0
-            });
-            if (error) {
-                showToast('发布失败: ' + error.message, 'error');
+            try {
+                const { error } = await supabaseClient.from('posts').insert({
+                    title: title,
+                    content: content,
+                    category: category,
+                    author_name: displayName,
+                    author_id: currentUserId,
+                    author_college: userProfile.college || '',
+                    author_gender: userProfile.gender || '',
+                    is_admin: isAdmin,
+                    likes: 0,
+                    views: 0
+                });
+                if (error) {
+                    showToast('发布失败: ' + error.message, 'error');
+                    return;
+                }
+            } catch (e) {
+                console.error('发帖异常', e);
+                showToast('网络请求失败，请检查控制台错误信息', 'error');
                 return;
             }
 
@@ -1064,9 +1076,15 @@
             }
             if (!confirm('确定要删除这条帖子吗？')) return;
 
-            const { error } = await supabaseClient.from('posts').delete().eq('id', postId);
-            if (error) {
-                showToast('删除失败: ' + error.message, 'error');
+            try {
+                const { error } = await supabaseClient.from('posts').delete().eq('id', postId);
+                if (error) {
+                    showToast('删除失败: ' + error.message, 'error');
+                    return;
+                }
+            } catch (e) {
+                console.error('删除异常', e);
+                showToast('网络请求失败', 'error');
                 return;
             }
 
@@ -1131,17 +1149,27 @@
                 showToast('请输入姓名', 'error');
                 return;
             }
+            const oldName = userProfile.name;
+            const oldCollege = userProfile.college;
+            const oldGender = userProfile.gender;
             userProfile = { name, studentId, college, gender };
             saveLocalProfile();
-
-            // 同步更新所有帖子和评论的姓名、学院、性别
-            await supabaseClient.from('posts').update({ author_name: name, author_college: college, author_gender: gender }).eq('author_id', currentUserId);
-            await supabaseClient.from('comments').update({ author_name: name, author_college: college, author_gender: gender }).eq('author_id', currentUserId);
 
             updateNavAvatar();
             closeModal('profileModal');
             showToast('个人信息保存成功', 'success');
-            await loadPosts();
+
+            // 只在信息真正有变化时才后台同步历史帖子和评论，避免无意义的请求
+            if (name !== oldName || college !== oldCollege || gender !== oldGender) {
+                Promise.all([
+                    supabaseClient.from('posts').update({ author_name: name, author_college: college, author_gender: gender }).eq('author_id', currentUserId),
+                    supabaseClient.from('comments').update({ author_name: name, author_college: college, author_gender: gender }).eq('author_id', currentUserId)
+                ]).then(() => {
+                    loadPosts();
+                }).catch(err => {
+                    console.error('同步历史数据失败', err);
+                });
+            }
         }
 
         function updateNavAvatar() {
