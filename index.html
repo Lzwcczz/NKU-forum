@@ -6,6 +6,7 @@
     <title>南开大学算法导论设计论坛</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
         body { font-family: 'Noto Sans SC', sans-serif; background-color: #f5f3ff; }
@@ -281,8 +282,7 @@
                 </div>
                 <div class="p-6 overflow-y-auto">
                     <div class="flex flex-col items-center mb-6">
-                        <div id="profileAvatar" class="w-20 h-20 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white font-bold text-2xl mb-3">我</div>
-                        <p class="text-sm text-gray-500">点击头像可修改（演示）</p>
+                        <div id="profileAvatar" class="w-20 h-20 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white font-bold text-2xl mb-3">匿</div>
                     </div>
                     <div class="space-y-4">
                         <div>
@@ -346,7 +346,13 @@
     </button>
 
     <script>
-        // 数据
+        // ==================== Supabase 配置 ====================
+        // 请替换为你自己的 Supabase 项目 URL 和 anon key
+        const SUPABASE_URL = 'https://ubohnrkkqjyqcunzcksw.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_Q2pCEk8bsHOzQvqr971qAw_ZuiA6ncJ';
+        const supabase = supabaseJs.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // ==================== 数据状态 ====================
         const categories = {
             homework: { name: '作业讨论', icon: 'fa-clipboard-list', color: 'bg-orange-100 text-orange-600' },
             algorithm: { name: '算法分享', icon: 'fa-project-diagram', color: 'bg-blue-100 text-blue-600' },
@@ -357,13 +363,26 @@
         };
 
         let posts = [];
+        let allComments = [];
+        let likedPostIds = JSON.parse(localStorage.getItem('nku-forum-liked') || '[]');
 
         let currentFilter = 'hot';
         let currentCategory = 'all';
         let searchQuery = '';
 
+        // 用户身份：用 localStorage 存一个随机 ID，用于判断"是不是我发的"
+        let currentUserId = localStorage.getItem('nku-forum-user-id');
+        if (!currentUserId) {
+            currentUserId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+                const r = Math.random() * 16 | 0;
+                const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+            localStorage.setItem('nku-forum-user-id', currentUserId);
+        }
+
         let userProfile = {
-            name: '我',
+            name: '匿名',
             studentId: '',
             college: '',
             gender: ''
@@ -372,17 +391,135 @@
         let notifications = [];
         let notifPanelOpen = false;
 
-        // 初始化
-        document.addEventListener('DOMContentLoaded', () => {
+        // ==================== 工具函数 ====================
+        function formatTime(isoString) {
+            if (!isoString) return '刚刚';
+            const date = new Date(isoString);
+            const now = new Date();
+            const diff = (now - date) / 1000;
+            if (diff < 60) return '刚刚';
+            if (diff < 3600) return Math.floor(diff / 60) + '分钟前';
+            if (diff < 86400) return Math.floor(diff / 3600) + '小时前';
+            if (diff < 604800) return Math.floor(diff / 86400) + '天前';
+            return date.toLocaleDateString('zh-CN');
+        }
+
+        function saveLocalProfile() {
+            localStorage.setItem('nku-forum-userProfile', JSON.stringify(userProfile));
+        }
+
+        function loadLocalProfile() {
+            try {
+                const saved = localStorage.getItem('nku-forum-userProfile');
+                if (saved) userProfile = JSON.parse(saved);
+            } catch (e) { console.warn('读取本地个人信息失败', e); }
+        }
+
+        // ==================== 数据加载 ====================
+        async function loadPosts() {
+            const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+            const { data, error } = await supabase
+                .from('posts')
+                .select('*')
+                .gt('created_at', thirtyDaysAgo)
+                .order('created_at', { ascending: false });
+
+            if (error) {
+                console.error('加载帖子失败', error);
+                showToast('加载数据失败: ' + error.message, 'error');
+                return;
+            }
+
+            posts = (data || []).map(p => ({
+                id: p.id,
+                author: p.author_name,
+                avatar: p.author_name ? p.author_name.charAt(0) : '匿',
+                avatarColor: 'bg-gradient-to-br from-purple-500 to-indigo-600 text-white',
+                category: p.category,
+                title: p.title,
+                content: p.content,
+                time: formatTime(p.created_at),
+                likes: p.likes || 0,
+                views: p.views || 0,
+                comments: 0,
+                liked: likedPostIds.includes(p.id),
+                isTop: false,
+                author_id: p.author_id,
+                created_at: p.created_at,
+                commentList: []
+            }));
+
+            await loadComments();
             renderPosts();
             renderHotTopics();
+        }
+
+        async function loadComments() {
+            const { data, error } = await supabase
+                .from('comments')
+                .select('*')
+                .order('created_at', { ascending: true });
+
+            if (error) {
+                console.error('加载评论失败', error);
+                return;
+            }
+
+            allComments = (data || []).map(c => ({
+                id: c.id,
+                post_id: c.post_id,
+                author: c.author_name,
+                content: c.content,
+                time: formatTime(c.created_at)
+            }));
+
+            posts.forEach(post => {
+                post.commentList = allComments.filter(c => c.post_id === post.id);
+                post.comments = post.commentList.length;
+            });
+        }
+
+        // ==================== 实时订阅 ====================
+        function setupRealtime() {
+            supabase
+                .channel('public:posts')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, () => {
+                    loadPosts();
+                })
+                .subscribe();
+
+            supabase
+                .channel('public:comments')
+                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'comments' }, (payload) => {
+                    const commentedPost = posts.find(p => p.id === payload.new.post_id);
+                    if (commentedPost && commentedPost.author_id === currentUserId) {
+                        addNotification('reply', commentedPost);
+                    }
+                    loadComments().then(() => {
+                        renderPosts();
+                        renderHotTopics();
+                        // 如果正在查看该帖子详情，刷新详情
+                        const detailModal = document.getElementById('detailModal');
+                        if (!detailModal.classList.contains('hidden')) {
+                            openPostDetail(payload.new.post_id);
+                        }
+                    });
+                })
+                .subscribe();
+        }
+
+        // ==================== 初始化 ====================
+        document.addEventListener('DOMContentLoaded', () => {
+            loadLocalProfile();
             setupEventListeners();
-            renderNotifications();
-            updateNavAvatar();
+            loadPosts().then(() => {
+                renderNotifications();
+                updateNavAvatar();
+                setupRealtime();
+            });
         });
 
         function setupEventListeners() {
-            // 筛选按钮
             document.querySelectorAll('.filter-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     document.querySelectorAll('.filter-btn').forEach(b => {
@@ -396,7 +533,6 @@
                 });
             });
 
-            // 分类导航
             document.querySelectorAll('.sidebar-item').forEach(item => {
                 item.addEventListener('click', (e) => {
                     e.preventDefault();
@@ -411,50 +547,41 @@
                 });
             });
 
-            // 搜索
             document.getElementById('searchInput').addEventListener('input', (e) => {
                 searchQuery = e.target.value.toLowerCase();
                 renderPosts();
             });
 
-            // 加载更多
             document.getElementById('loadMoreBtn').addEventListener('click', () => {
                 showToast('已加载更多帖子', 'info');
             });
         }
 
+        // ==================== 渲染 ====================
         function getFilteredPosts() {
             let result = [...posts];
-
-            // 分类筛选
             if (currentCategory !== 'all') {
                 result = result.filter(p => p.category === currentCategory);
             }
-
-            // 搜索
             if (searchQuery) {
                 result = result.filter(p =>
                     p.title.toLowerCase().includes(searchQuery) ||
                     p.content.toLowerCase().includes(searchQuery)
                 );
             }
-
-            // 排序
             if (currentFilter === 'hot') {
                 result.sort((a, b) => b.likes - a.likes);
             } else if (currentFilter === 'new') {
-                result.sort((a, b) => b.id - a.id);
+                result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
             } else if (currentFilter === 'top') {
                 result.sort((a, b) => b.views - a.views);
             }
-
             return result;
         }
 
         function renderPosts() {
             const container = document.getElementById('postList');
             const filtered = getFilteredPosts();
-
             if (filtered.length === 0) {
                 container.innerHTML = `
                     <div class="bg-white rounded-2xl shadow-sm p-12 text-center">
@@ -464,14 +591,12 @@
                 `;
                 return;
             }
-
             container.innerHTML = filtered.map(post => createPostHTML(post)).join('');
         }
 
         function renderHotTopics() {
             const container = document.getElementById('hotTopics');
             const topPosts = [...posts].sort((a, b) => b.likes - a.likes).slice(0, 3);
-
             if (topPosts.length === 0) {
                 container.innerHTML = `
                     <div class="px-3 py-4 text-center text-gray-400 text-sm">
@@ -481,7 +606,6 @@
                 `;
                 return;
             }
-
             container.innerHTML = topPosts.map((post, index) => `
                 <div class="px-3 py-2 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors" onclick="openPostDetail(${post.id})">
                     <div class="flex items-center gap-2 mb-1">
@@ -495,6 +619,7 @@
 
         function createPostHTML(post) {
             const cat = categories[post.category];
+            const isMine = post.author_id === currentUserId;
             return `
                 <article class="post-card bg-white rounded-2xl shadow-sm p-5 cursor-pointer" onclick="openPostDetail(${post.id})">
                     <div class="flex items-start gap-4">
@@ -510,6 +635,7 @@
                                     <i class="fas ${cat.icon} text-[10px]"></i> ${cat.name}
                                 </span>
                                 ${post.isTop ? '<span class="px-2 py-0.5 rounded-lg bg-red-100 text-red-600 text-xs font-medium"><i class="fas fa-thumbtack text-[10px]"></i> 置顶</span>' : ''}
+                                ${isMine ? '<span class="px-2 py-0.5 rounded-lg bg-gray-100 text-gray-600 text-xs font-medium">我的</span>' : ''}
                                 <span class="text-gray-400 text-xs ml-auto">${post.time}</span>
                             </div>
                             <h3 class="font-bold text-gray-900 mb-2 leading-snug hover:text-purple-700 transition-colors">${post.title}</h3>
@@ -534,29 +660,52 @@
             `;
         }
 
-        function toggleLike(postId) {
-            const post = posts.find(p => p.id === postId);
-            if (post) {
-                post.liked = !post.liked;
-                post.likes += post.liked ? 1 : -1;
-                renderPosts();
-                renderHotTopics();
-                if (post.liked) {
-                    showToast('已点赞', 'success');
-                }
-            }
-        }
-
-        function openPostDetail(postId) {
+        // ==================== 交互操作 ====================
+        async function toggleLike(postId) {
             const post = posts.find(p => p.id === postId);
             if (!post) return;
-             post.views++;                                                                                          
-             renderPosts(); 
+
+            const newLikes = post.liked ? Math.max(0, post.likes - 1) : post.likes + 1;
+            const { error } = await supabase.from('posts').update({ likes: newLikes }).eq('id', postId);
+            if (error) {
+                showToast('操作失败', 'error');
+                return;
+            }
+
+            post.liked = !post.liked;
+            post.likes = newLikes;
+            if (post.liked) {
+                if (!likedPostIds.includes(postId)) likedPostIds.push(postId);
+            } else {
+                likedPostIds = likedPostIds.filter(id => id !== postId);
+            }
+            localStorage.setItem('nku-forum-liked', JSON.stringify(likedPostIds));
+
+            renderPosts();
+            renderHotTopics();
+            if (post.liked) showToast('已点赞', 'success');
+        }
+
+        async function incrementViews(postId) {
+            const post = posts.find(p => p.id === postId);
+            if (!post) return;
+            const newViews = (post.views || 0) + 1;
+            await supabase.from('posts').update({ views: newViews }).eq('id', postId);
+            post.views = newViews;
+            renderPosts();
+        }
+
+        async function openPostDetail(postId) {
+            const post = posts.find(p => p.id === postId);
+            if (!post) return;
+            await incrementViews(postId);
 
             const cat = categories[post.category];
             const detailContent = document.getElementById('detailContent');
             const commenterName = userProfile.name && userProfile.name.trim() ? userProfile.name.trim() : '匿名';
             const commenterChar = commenterName.charAt(0);
+            const isMine = post.author_id === currentUserId;
+
             detailContent.innerHTML = `
                 <div class="p-6">
                     <div class="flex items-center gap-3 mb-4">
@@ -582,17 +731,18 @@
                         <span class="flex items-center gap-2 text-gray-400 text-sm">
                             <i class="far fa-eye"></i> ${post.views} 浏览
                         </span>
+                        ${isMine ? `<button onclick="event.stopPropagation(); deletePost(${post.id})" class="ml-auto text-red-500 hover:text-red-700 text-sm font-medium"><i class="fas fa-trash-alt mr-1"></i>删除</button>` : ''}
                     </div>
                 </div>
                 <div class="px-6 pb-6">
-                    <h3 class="font-bold text-gray-800 mb-4">评论 (${post.commentList.length})</h3>
+                    <h3 class="font-bold text-gray-800 mb-4">评论 (${post.comments})</h3>
                     <div class="space-y-4 mb-6" id="commentList">
                         ${post.commentList.length > 0 ? post.commentList.map(c => `
                             <div class="comment-enter flex gap-3">
-                                <div class="w-9 h-9 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center font-bold text-xs flex-shrink-0">${c.author[0]}</div>
+                                <div class="w-9 h-9 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center font-bold text-xs flex-shrink-0">${c.author ? c.author.charAt(0) : '匿'}</div>
                                 <div class="flex-1 bg-gray-50 rounded-xl rounded-tl-none p-3">
                                     <div class="flex items-center gap-2 mb-1">
-                                        <span class="font-bold text-sm text-gray-800">${c.author}</span>
+                                        <span class="font-bold text-sm text-gray-800">${c.author || '匿名'}</span>
                                         <span class="text-xs text-gray-400">${c.time}</span>
                                     </div>
                                     <p class="text-sm text-gray-600">${c.content}</p>
@@ -615,14 +765,13 @@
             `;
 
             openModal('detailModal');
-
             setTimeout(() => {
                 const input = document.getElementById('commentInput');
                 if (input) input.focus();
             }, 100);
         }
 
-        function submitComment(postId) {
+        async function submitComment(postId) {
             const input = document.getElementById('commentInput');
             const content = input.value.trim();
             if (!content) {
@@ -630,24 +779,27 @@
                 return;
             }
 
-            const post = posts.find(p => p.id === postId);
-            if (post) {
-                const commenterName = userProfile.name && userProfile.name.trim() ? userProfile.name.trim() : '我';
-                post.commentList.push({
-                    author: commenterName,
-                    content: content,
-                    time: '刚刚'
-                });
-                post.comments++;
-                addNotification('reply', post);
-                openPostDetail(postId);
-                renderPosts();
-                renderHotTopics();
-                showToast('评论发布成功', 'success');
+            const commenterName = userProfile.name && userProfile.name.trim() ? userProfile.name.trim() : '匿名';
+            const { error } = await supabase.from('comments').insert({
+                post_id: postId,
+                author_name: commenterName,
+                content: content
+            });
+
+            if (error) {
+                showToast('评论失败: ' + error.message, 'error');
+                return;
             }
+
+            input.value = '';
+            showToast('评论发布成功', 'success');
+            await loadComments();
+            openPostDetail(postId);
+            renderPosts();
+            renderHotTopics();
         }
 
-        function submitPost() {
+        async function submitPost() {
             const category = document.getElementById('postCategory').value;
             const title = document.getElementById('postTitle').value.trim();
             const content = document.getElementById('postContent').value.trim();
@@ -661,36 +813,49 @@
                 return;
             }
 
-            const displayName = userProfile.name && userProfile.name.trim() ? userProfile.name.trim() : '我';
-            const firstChar = displayName.charAt(0);
-            const newPost = {
-                id: Date.now(),
-                author: displayName,
-                avatar: firstChar,
-                avatarColor: 'bg-gradient-to-br from-purple-500 to-indigo-600 text-white',
-                category: category,
+            const displayName = userProfile.name && userProfile.name.trim() ? userProfile.name.trim() : '匿名';
+            const { error } = await supabase.from('posts').insert({
                 title: title,
                 content: content,
-                time: '刚刚',
+                category: category,
+                author_name: displayName,
+                author_id: currentUserId,
                 likes: 0,
-                comments: 0,
-                views: 0,
-                liked: false,
-                isTop: false,
-                commentList: []
-            };
+                views: 0
+            });
 
-            posts.unshift(newPost);
-            renderPosts();
-            renderHotTopics();
-            closeModal('postModal');
+            if (error) {
+                showToast('发布失败: ' + error.message, 'error');
+                return;
+            }
 
             document.getElementById('postTitle').value = '';
             document.getElementById('postContent').value = '';
-
+            closeModal('postModal');
             showToast('帖子发布成功！', 'success');
+            await loadPosts();
         }
 
+        async function deletePost(postId) {
+            const post = posts.find(p => p.id === postId);
+            if (!post || post.author_id !== currentUserId) {
+                showToast('无权删除', 'error');
+                return;
+            }
+            if (!confirm('确定要删除这条帖子吗？')) return;
+
+            const { error } = await supabase.from('posts').delete().eq('id', postId);
+            if (error) {
+                showToast('删除失败: ' + error.message, 'error');
+                return;
+            }
+
+            showToast('帖子已删除', 'success');
+            closeModal('detailModal');
+            await loadPosts();
+        }
+
+        // ==================== 模态框 & Toast ====================
         function openModal(modalId) {
             document.getElementById(modalId).classList.remove('hidden');
             document.body.style.overflow = 'hidden';
@@ -714,14 +879,13 @@
                 error: 'fa-exclamation-circle',
                 info: 'fa-info-circle'
             };
-
             toast.className = `toast ${colors[type]} text-white px-5 py-3 rounded-xl shadow-lg flex items-center gap-3 text-sm font-medium`;
             toast.innerHTML = `<i class="fas ${icons[type]}"></i> ${message}`;
-
             container.appendChild(toast);
             setTimeout(() => toast.remove(), 3000);
         }
 
+        // ==================== 个人信息 ====================
         function openProfileModal() {
             document.getElementById('profileName').value = userProfile.name || '';
             document.getElementById('profileStudentId').value = userProfile.studentId || '';
@@ -742,13 +906,12 @@
             for (let r of genderRadios) {
                 if (r.checked) gender = r.value;
             }
-
             if (!name) {
                 showToast('请输入姓名', 'error');
                 return;
             }
-
             userProfile = { name, studentId, college, gender };
+            saveLocalProfile();
             updateNavAvatar();
             closeModal('profileModal');
             showToast('个人信息保存成功', 'success');
@@ -757,16 +920,16 @@
         function updateNavAvatar() {
             const navAvatar = document.getElementById('navAvatar');
             const profileAvatar = document.getElementById('profileAvatar');
-            const displayName = userProfile.name && userProfile.name.trim() ? userProfile.name.trim() : '我';
+            const displayName = userProfile.name && userProfile.name.trim() ? userProfile.name.trim() : '匿名';
             const firstChar = displayName.charAt(0);
             if (navAvatar) navAvatar.textContent = firstChar;
             if (profileAvatar) profileAvatar.textContent = firstChar;
         }
 
+        // ==================== 通知 ====================
         function addNotification(type, post) {
             const enabled = document.getElementById('notifSetting');
             if (enabled && !enabled.checked) return;
-
             const notif = {
                 id: Date.now(),
                 type: type,
@@ -783,11 +946,9 @@
             const list = document.getElementById('notificationList');
             const badge = document.getElementById('notifBadge');
             const unreadCount = notifications.filter(n => !n.read).length;
-
             if (badge) {
                 badge.classList.toggle('hidden', unreadCount === 0);
             }
-
             if (notifications.length === 0) {
                 list.innerHTML = `
                     <div class="px-4 py-8 text-center text-gray-400 text-sm">
@@ -797,7 +958,6 @@
                 `;
                 return;
             }
-
             list.innerHTML = notifications.map(n => `
                 <div class="px-4 py-3 border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors ${n.read ? 'opacity-70' : 'bg-purple-50/30'}" onclick="readNotification(${n.id}, ${n.postId})">
                     <div class="flex items-start gap-3">
@@ -842,7 +1002,6 @@
             showToast('全部标记为已读', 'success');
         }
 
-        // 点击页面其他区域关闭通知面板
         document.addEventListener('click', (e) => {
             const wrapper = document.getElementById('notificationWrapper');
             const panel = document.getElementById('notificationPanel');
