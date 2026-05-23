@@ -158,46 +158,19 @@
                 </div>
 
                 <div class="bg-white rounded-2xl shadow-sm p-4 mb-4">
-                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 px-2">本周学霸榜</h3>
-                    <div class="space-y-3" id="activeUsers">
-                        <div class="flex items-center gap-3 px-2 py-2 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors">
-                            <div class="w-8 h-8 rounded-full bg-yellow-100 text-yellow-700 flex items-center justify-center font-bold text-xs">1</div>
-                            <div class="w-10 h-10 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-sm">李</div>
-                            <div class="flex-1 min-w-0">
-                                <div class="text-sm font-medium text-gray-800 truncate">李明轩</div>
-                                <div class="text-xs text-gray-400">计算机学院 · 获赞 342</div>
-                            </div>
-                        </div>
-                        <div class="flex items-center gap-3 px-2 py-2 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors">
-                            <div class="w-8 h-8 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center font-bold text-xs">2</div>
-                            <div class="w-10 h-10 rounded-full bg-pink-100 text-pink-600 flex items-center justify-center font-bold text-sm">王</div>
-                            <div class="flex-1 min-w-0">
-                                <div class="text-sm font-medium text-gray-800 truncate">王雨桐</div>
-                                <div class="text-xs text-gray-400">软件学院 · 获赞 285</div>
-                            </div>
-                        </div>
-                        <div class="flex items-center gap-3 px-2 py-2 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors">
-                            <div class="w-8 h-8 rounded-full bg-orange-100 text-orange-700 flex items-center justify-center font-bold text-xs">3</div>
-                            <div class="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-sm">张</div>
-                            <div class="flex-1 min-w-0">
-                                <div class="text-sm font-medium text-gray-800 truncate">张子涵</div>
-                                <div class="text-xs text-gray-400">人工智能学院 · 获赞 210</div>
-                            </div>
-                        </div>
+                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 px-2">学霸榜</h3>
+                    <div class="space-y-3" id="leaderboardList">
+                        <!-- 动态生成 -->
                     </div>
                 </div>
 
                 <div class="bg-white rounded-2xl shadow-sm p-4">
-                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 px-2">课程公告</h3>
-                    <div class="space-y-3 text-sm">
-                        <div class="px-2 py-2 border-l-2 border-purple-500 bg-purple-50 rounded-r-lg">
-                            <div class="font-medium text-gray-800 text-xs mb-1">作业提交提醒</div>
-                            <div class="text-gray-500 text-xs">第三次编程作业将于本周五 23:59 截止</div>
-                        </div>
-                        <div class="px-2 py-2 border-l-2 border-green-500 bg-green-50 rounded-r-lg">
-                            <div class="font-medium text-gray-800 text-xs mb-1">课程调整</div>
-                            <div class="text-gray-500 text-xs">下周三实验课改至周五下午，请互相转告</div>
-                        </div>
+                    <div class="flex justify-between items-center mb-3 px-2">
+                        <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider">课程公告</h3>
+                        <button id="adminAnnounceBtn" onclick="openAnnouncementEditor()" class="hidden text-xs text-purple-600 hover:text-purple-800 font-medium">管理</button>
+                    </div>
+                    <div class="space-y-3 text-sm" id="announcementList">
+                        <!-- 动态生成 -->
                     </div>
                 </div>
             </aside>
@@ -332,9 +305,15 @@
                         </div>
                     </div>
                 </div>
-                <div class="px-6 py-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50">
-                    <button onclick="closeModal('profileModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-200 rounded-xl text-sm font-medium transition-colors">取消</button>
-                    <button onclick="saveProfile()" class="px-5 py-2.5 bg-purple-700 text-white rounded-xl hover:bg-purple-800 text-sm font-medium transition-colors shadow-lg shadow-purple-200">保存信息</button>
+                <div class="px-6 py-4 border-t border-gray-100 flex justify-between items-center bg-gray-50">
+                    <div class="flex gap-2">
+                        <button id="adminLoginBtn" onclick="loginAdmin()" class="px-3 py-2 text-xs text-purple-600 hover:bg-purple-50 rounded-lg font-medium transition-colors border border-purple-200">管理员登录</button>
+                        <button id="adminLogoutBtn" onclick="logoutAdmin()" class="hidden px-3 py-2 text-xs text-red-600 hover:bg-red-50 rounded-lg font-medium transition-colors border border-red-200">退出管理</button>
+                    </div>
+                    <div class="flex gap-3">
+                        <button onclick="closeModal('profileModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-200 rounded-xl text-sm font-medium transition-colors">取消</button>
+                        <button onclick="saveProfile()" class="px-5 py-2.5 bg-purple-700 text-white rounded-xl hover:bg-purple-800 text-sm font-medium transition-colors shadow-lg shadow-purple-200">保存信息</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -389,6 +368,11 @@
 
         let notifications = [];
         let notifPanelOpen = false;
+
+        let isAdmin = localStorage.getItem('nku-forum-admin') === 'true';
+        const ADMIN_PASSWORD = 'nkuadmin';
+        let announcements = [];
+        let likedCommentIds = JSON.parse(localStorage.getItem('nku-forum-liked-comments') || '[]');
 
         // ==================== 工具函数 ====================
         function formatTime(isoString) {
@@ -451,6 +435,7 @@
             await loadComments();
             renderPosts();
             renderHotTopics();
+            renderLeaderboard();
         }
 
         async function loadComments() {
@@ -468,7 +453,10 @@
                 id: c.id,
                 post_id: c.post_id,
                 author: c.author_name,
+                author_id: c.author_id,
                 content: c.content,
+                likes: c.likes || 0,
+                liked: likedCommentIds.includes(c.id),
                 time: formatTime(c.created_at)
             }));
 
@@ -476,6 +464,20 @@
                 post.commentList = allComments.filter(c => c.post_id === post.id);
                 post.comments = post.commentList.length;
             });
+        }
+
+        async function loadAnnouncements() {
+            const { data, error } = await supabaseClient
+                .from('announcements')
+                .select('*')
+                .order('created_at', { ascending: true });
+
+            if (error) {
+                console.error('加载公告失败', error);
+                return;
+            }
+            announcements = data || [];
+            renderAnnouncements();
         }
 
         // ==================== 实时订阅 ====================
@@ -498,12 +500,20 @@
                     loadComments().then(() => {
                         renderPosts();
                         renderHotTopics();
+                        renderLeaderboard();
                         // 如果正在查看该帖子详情，刷新详情
                         const detailModal = document.getElementById('detailModal');
                         if (!detailModal.classList.contains('hidden')) {
                             openPostDetail(payload.new.post_id);
                         }
                     });
+                })
+                .subscribe();
+
+            supabaseClient
+                .channel('public:announcements')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, () => {
+                    loadAnnouncements();
                 })
                 .subscribe();
         }
@@ -515,6 +525,8 @@
             loadPosts().then(() => {
                 renderNotifications();
                 updateNavAvatar();
+                renderLeaderboard();
+                loadAnnouncements();
                 setupRealtime();
             });
         });
@@ -617,6 +629,152 @@
             `).join('');
         }
 
+        function renderLeaderboard() {
+            const container = document.getElementById('leaderboardList');
+            if (!container) return;
+
+            const scores = {};
+            posts.forEach(p => {
+                if (!p.author_id) return;
+                if (!scores[p.author_id]) scores[p.author_id] = { name: p.author, likes: 0 };
+                scores[p.author_id].likes += p.likes || 0;
+                scores[p.author_id].name = p.author;
+            });
+            allComments.forEach(c => {
+                if (!c.author_id) return;
+                if (!scores[c.author_id]) scores[c.author_id] = { name: c.author, likes: 0 };
+                scores[c.author_id].likes += c.likes || 0;
+                scores[c.author_id].name = c.author;
+            });
+
+            const topUsers = Object.entries(scores)
+                .sort((a, b) => b[1].likes - a[1].likes)
+                .slice(0, 3);
+
+            if (topUsers.length === 0) {
+                container.innerHTML = `
+                    <div class="px-3 py-4 text-center text-gray-400 text-sm">
+                        <i class="fas fa-crown text-gray-300 mb-2 block text-xl"></i>
+                        暂无数据
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = topUsers.map(([id, user], index) => `
+                <div class="flex items-center gap-3 px-2 py-2 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors">
+                    <div class="w-8 h-8 rounded-full ${index === 0 ? 'bg-yellow-100 text-yellow-700' : index === 1 ? 'bg-gray-100 text-gray-600' : 'bg-orange-100 text-orange-700'} flex items-center justify-center font-bold text-xs">${index + 1}</div>
+                    <div class="w-10 h-10 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-sm">${user.name ? user.name.charAt(0) : '匿'}</div>
+                    <div class="flex-1 min-w-0">
+                        <div class="text-sm font-medium text-gray-800 truncate">${user.name || '匿名'}</div>
+                        <div class="text-xs text-gray-400">获赞 ${user.likes}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderAnnouncements() {
+            const container = document.getElementById('announcementList');
+            const adminBtn = document.getElementById('adminAnnounceBtn');
+            if (!container) return;
+            if (adminBtn) adminBtn.classList.toggle('hidden', !isAdmin);
+
+            if (announcements.length === 0) {
+                container.innerHTML = `
+                    <div class="px-2 py-2 text-center text-gray-400 text-xs">暂无公告</div>
+                `;
+                return;
+            }
+
+            const colorMap = {
+                purple: 'border-purple-500 bg-purple-50',
+                green: 'border-green-500 bg-green-50',
+                red: 'border-red-500 bg-red-50',
+                blue: 'border-blue-500 bg-blue-50',
+                yellow: 'border-yellow-500 bg-yellow-50'
+            };
+
+            container.innerHTML = announcements.map(a => `
+                <div class="px-2 py-2 border-l-2 ${colorMap[a.color] || colorMap.purple} rounded-r-lg">
+                    <div class="font-medium text-gray-800 text-xs mb-1">${a.title}</div>
+                    <div class="text-gray-500 text-xs">${a.content}</div>
+                </div>
+            `).join('');
+        }
+
+        function loginAdmin() {
+            const pw = prompt('请输入管理员密码');
+            if (pw === ADMIN_PASSWORD) {
+                isAdmin = true;
+                localStorage.setItem('nku-forum-admin', 'true');
+                showToast('管理员登录成功', 'success');
+                renderAnnouncements();
+                updateAdminUI();
+            } else if (pw !== null) {
+                showToast('密码错误', 'error');
+            }
+        }
+
+        function logoutAdmin() {
+            isAdmin = false;
+            localStorage.removeItem('nku-forum-admin');
+            showToast('已退出管理员模式', 'info');
+            renderAnnouncements();
+            updateAdminUI();
+        }
+
+        function updateAdminUI() {
+            const adminBtn = document.getElementById('adminAnnounceBtn');
+            if (adminBtn) adminBtn.classList.toggle('hidden', !isAdmin);
+            const loginBtn = document.getElementById('adminLoginBtn');
+            const logoutBtn = document.getElementById('adminLogoutBtn');
+            if (loginBtn) loginBtn.classList.toggle('hidden', isAdmin);
+            if (logoutBtn) logoutBtn.classList.toggle('hidden', !isAdmin);
+        }
+
+        function openAnnouncementEditor() {
+            if (!isAdmin) return;
+            const titles = announcements.map(a => a.title).join('\n');
+            const action = prompt('选择操作：\n1. 新增公告\n2. 删除公告\n3. 修改公告\n\n请输入数字 (1-3)：');
+            if (!action) return;
+            if (action === '1') {
+                const title = prompt('公告标题：');
+                if (!title) return;
+                const content = prompt('公告内容：');
+                if (!content) return;
+                const color = prompt('颜色（purple/green/red/blue/yellow）：') || 'purple';
+                supabaseClient.from('announcements').insert({ title, content, color }).then(({ error }) => {
+                    if (error) showToast('添加失败', 'error');
+                    else { showToast('公告已添加', 'success'); loadAnnouncements(); }
+                });
+            } else if (action === '2') {
+                if (announcements.length === 0) { showToast('没有可删除的公告', 'error'); return; }
+                const list = announcements.map((a, i) => `${i + 1}. ${a.title}`).join('\n');
+                const idx = parseInt(prompt(`要删除哪条？\n${list}`), 10);
+                if (isNaN(idx) || idx < 1 || idx > announcements.length) return;
+                const id = announcements[idx - 1].id;
+                supabaseClient.from('announcements').delete().eq('id', id).then(({ error }) => {
+                    if (error) showToast('删除失败', 'error');
+                    else { showToast('公告已删除', 'success'); loadAnnouncements(); }
+                });
+            } else if (action === '3') {
+                if (announcements.length === 0) { showToast('没有可修改的公告', 'error'); return; }
+                const list = announcements.map((a, i) => `${i + 1}. ${a.title}`).join('\n');
+                const idx = parseInt(prompt(`要修改哪条？\n${list}`), 10);
+                if (isNaN(idx) || idx < 1 || idx > announcements.length) return;
+                const ann = announcements[idx - 1];
+                const title = prompt('新标题：', ann.title);
+                if (title === null) return;
+                const content = prompt('新内容：', ann.content);
+                if (content === null) return;
+                const color = prompt('颜色（purple/green/red/blue/yellow）：', ann.color) || ann.color;
+                supabaseClient.from('announcements').update({ title, content, color }).eq('id', ann.id).then(({ error }) => {
+                    if (error) showToast('修改失败', 'error');
+                    else { showToast('公告已修改', 'success'); loadAnnouncements(); }
+                });
+            }
+        }
+
         function createPostHTML(post) {
             const cat = categories[post.category];
             const isMine = post.author_id === currentUserId;
@@ -684,7 +842,34 @@
 
             renderPosts();
             renderHotTopics();
+            renderLeaderboard();
             if (post.liked) showToast('已点赞', 'success');
+        }
+
+        async function toggleCommentLike(commentId, postId) {
+            const comment = allComments.find(c => c.id === commentId);
+            if (!comment) return;
+
+            const newLikes = comment.liked ? Math.max(0, comment.likes - 1) : comment.likes + 1;
+            const { error } = await supabaseClient.from('comments').update({ likes: newLikes }).eq('id', commentId);
+            if (error) {
+                showToast('操作失败', 'error');
+                return;
+            }
+
+            comment.liked = !comment.liked;
+            comment.likes = newLikes;
+            if (comment.liked) {
+                if (!likedCommentIds.includes(commentId)) likedCommentIds.push(commentId);
+            } else {
+                likedCommentIds = likedCommentIds.filter(id => id !== commentId);
+            }
+            localStorage.setItem('nku-forum-liked-comments', JSON.stringify(likedCommentIds));
+
+            openPostDetail(postId);
+            renderPosts();
+            renderHotTopics();
+            renderLeaderboard();
         }
 
         async function incrementViews(postId) {
@@ -732,7 +917,7 @@
                         <span class="flex items-center gap-2 text-gray-400 text-sm">
                             <i class="far fa-eye"></i> ${post.views} 浏览
                         </span>
-                        ${isMine ? `<button onclick="event.stopPropagation(); deletePost(${post.id})" class="ml-auto text-red-500 hover:text-red-700 text-sm font-medium"><i class="fas fa-trash-alt mr-1"></i>删除</button>` : ''}
+                        ${isMine || isAdmin ? `<button onclick="event.stopPropagation(); deletePost(${post.id})" class="ml-auto text-red-500 hover:text-red-700 text-sm font-medium"><i class="fas fa-trash-alt mr-1"></i>删除</button>` : ''}
                     </div>
                 </div>
                 <div class="px-6 pb-6">
@@ -745,6 +930,10 @@
                                     <div class="flex items-center gap-2 mb-1">
                                         <span class="font-bold text-sm text-gray-800">${c.author || '匿名'}</span>
                                         <span class="text-xs text-gray-400">${c.time}</span>
+                                        <button onclick="event.stopPropagation(); toggleCommentLike(${c.id}, ${post.id})" class="like-btn flex items-center gap-1 text-xs ml-auto ${c.liked ? 'liked text-red-500' : 'text-gray-400 hover:text-red-500'} transition-colors">
+                                            <i class="${c.liked ? 'fas' : 'far'} fa-heart"></i>
+                                            <span>${c.likes}</span>
+                                        </button>
                                     </div>
                                     <p class="text-sm text-gray-600">${c.content}</p>
                                 </div>
@@ -785,6 +974,7 @@
             const { error } = await supabaseClient.from('comments').insert({
                 post_id: postId,
                 author_name: commenterName,
+                author_id: currentUserId,
                 content: content
             });
             if (error) {
@@ -798,6 +988,7 @@
             openPostDetail(postId);
             renderPosts();
             renderHotTopics();
+            renderLeaderboard();
         }
 
         async function submitPost() {
@@ -839,7 +1030,8 @@
 
         async function deletePost(postId) {
             const post = posts.find(p => p.id === postId);
-            if (!post || post.author_id !== currentUserId) {
+            if (!post) return;
+            if (post.author_id !== currentUserId && !isAdmin) {
                 showToast('无权删除', 'error');
                 return;
             }
@@ -895,6 +1087,7 @@
             for (let r of genderRadios) {
                 r.checked = (r.value === userProfile.gender);
             }
+            updateAdminUI();
             openModal('profileModal');
         }
 
