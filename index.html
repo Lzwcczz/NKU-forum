@@ -132,6 +132,36 @@
                     <button class="filter-btn px-5 py-2 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100 transition-all" data-filter="top">精华</button>
                 </div>
 
+                <!-- 高级筛选 -->
+                <div class="bg-white rounded-2xl shadow-sm p-3 mb-4 flex flex-wrap gap-3 items-center">
+                    <select id="filterCategory" class="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200">
+                        <option value="">全部类型</option>
+                        <option value="homework">作业讨论</option>
+                        <option value="algorithm">算法分享</option>
+                        <option value="material">学习资料</option>
+                        <option value="qa">疑难解答</option>
+                        <option value="notice">课程通知</option>
+                        <option value="exam">考试复习</option>
+                    </select>
+                    <select id="filterCollege" class="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200">
+                        <option value="">全部学院</option>
+                        <option value="计算机学院">计算机学院</option>
+                        <option value="软件学院">软件学院</option>
+                        <option value="人工智能学院">人工智能学院</option>
+                        <option value="电子信息与光学工程学院">电子信息与光学工程学院</option>
+                        <option value="数学科学学院">数学科学学院</option>
+                        <option value="经济学院">经济学院</option>
+                        <option value="商学院">商学院</option>
+                        <option value="文学院">文学院</option>
+                        <option value="其他">其他</option>
+                    </select>
+                    <label class="flex items-center gap-2 cursor-pointer text-sm text-gray-700">
+                        <input type="checkbox" id="filterFavorites" class="w-4 h-4 text-purple-600 rounded focus:ring-purple-500">
+                        只看收藏
+                    </label>
+                    <button onclick="resetFilters()" class="ml-auto px-3 py-2 text-sm text-purple-600 hover:bg-purple-50 rounded-lg transition-colors">重置</button>
+                </div>
+
                 <!-- 帖子列表 -->
                 <div id="postList" class="space-y-4">
                     <!-- 帖子由 JS 动态生成 -->
@@ -348,6 +378,15 @@
         let currentCategory = 'all';
         let searchQuery = '';
 
+        let filterCategory = '';
+        let filterCollege = '';
+        let filterFavorites = false;
+        let favoritedPostIds = [];
+
+        let replyingToCommentId = null;
+        let replyingToPostId = null;
+        let replyingToAuthorName = null;
+
         let currentUserId = localStorage.getItem('nku-forum-user-id');
         if (!currentUserId) {
             currentUserId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -392,6 +431,13 @@
             return '';
         }
 
+        function getAuthorId() {
+            if (userProfile.studentId && userProfile.studentId.trim()) {
+                return 'stu-' + userProfile.studentId.trim();
+            }
+            return currentUserId;
+        }
+
         function saveLocalProfile() {
             localStorage.setItem('nku-forum-userProfile', JSON.stringify(userProfile));
         }
@@ -401,6 +447,53 @@
                 const saved = localStorage.getItem('nku-forum-userProfile');
                 if (saved) userProfile = JSON.parse(saved);
             } catch (e) { console.warn('读取本地个人信息失败', e); }
+        }
+
+        function getFavoritesKey() {
+            return 'nku-forum-favorites-' + getAuthorId();
+        }
+
+        function loadFavorites() {
+            try {
+                favoritedPostIds = JSON.parse(localStorage.getItem(getFavoritesKey()) || '[]');
+            } catch (e) { favoritedPostIds = []; }
+        }
+
+        function saveFavorites() {
+            localStorage.setItem(getFavoritesKey(), JSON.stringify(favoritedPostIds));
+        }
+
+        function toggleFavorite(postId) {
+            if (favoritedPostIds.includes(postId)) {
+                favoritedPostIds = favoritedPostIds.filter(id => id !== postId);
+                showToast('已取消收藏', 'info');
+            } else {
+                favoritedPostIds.push(postId);
+                showToast('已收藏', 'success');
+            }
+            saveFavorites();
+            renderPosts();
+        }
+
+        function startReply(commentId, authorName, postId) {
+            replyingToCommentId = commentId;
+            replyingToPostId = postId;
+            replyingToAuthorName = authorName;
+            const input = document.getElementById('commentInput');
+            if (input) {
+                input.placeholder = `回复 @${authorName || '匿名'}:`;
+                input.focus();
+            }
+        }
+
+        function clearReplyState() {
+            replyingToCommentId = null;
+            replyingToPostId = null;
+            replyingToAuthorName = null;
+            const input = document.getElementById('commentInput');
+            if (input) {
+                input.placeholder = '写下你的评论...';
+            }
         }
 
         // ==================== 数据加载 ====================
@@ -460,6 +553,8 @@
             allComments = (data || []).map(c => ({
                 id: c.id,
                 post_id: c.post_id,
+                parent_id: c.parent_id || null,
+                reply_to_name: c.reply_to_name || '',
                 author: c.author_name,
                 author_id: c.author_id,
                 author_college: c.author_college || '',
@@ -505,8 +600,16 @@
                 .channel('public:comments')
                 .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'comments' }, (payload) => {
                     const commentedPost = posts.find(p => p.id === payload.new.post_id);
-                    if (commentedPost && commentedPost.author_id === currentUserId) {
+                    // 通知帖子作者
+                    if (commentedPost && commentedPost.author_id === getAuthorId()) {
                         addNotification('reply', commentedPost);
+                    }
+                    // 通知被回复的评论作者
+                    if (payload.new.parent_id) {
+                        const parentComment = allComments.find(c => c.id === payload.new.parent_id);
+                        if (parentComment && parentComment.author_id === getAuthorId()) {
+                            addNotification('reply', commentedPost, '回复了你在');
+                        }
                     }
                     loadComments().then(() => {
                         renderPosts();
@@ -532,6 +635,7 @@
         // ==================== 初始化 ====================
         document.addEventListener('DOMContentLoaded', () => {
             loadLocalProfile();
+            loadFavorites();
             setupEventListeners();
             loadPosts().then(() => {
                 renderNotifications();
@@ -578,6 +682,29 @@
             document.getElementById('loadMoreBtn').addEventListener('click', () => {
                 showToast('已加载更多帖子', 'info');
             });
+
+            document.getElementById('filterCategory').addEventListener('change', (e) => {
+                filterCategory = e.target.value;
+                renderPosts();
+            });
+            document.getElementById('filterCollege').addEventListener('change', (e) => {
+                filterCollege = e.target.value;
+                renderPosts();
+            });
+            document.getElementById('filterFavorites').addEventListener('change', (e) => {
+                filterFavorites = e.target.checked;
+                renderPosts();
+            });
+        }
+
+        function resetFilters() {
+            filterCategory = '';
+            filterCollege = '';
+            filterFavorites = false;
+            document.getElementById('filterCategory').value = '';
+            document.getElementById('filterCollege').value = '';
+            document.getElementById('filterFavorites').checked = false;
+            renderPosts();
         }
 
         // ==================== 渲染 ====================
@@ -586,10 +713,20 @@
             if (currentCategory !== 'all') {
                 result = result.filter(p => p.category === currentCategory);
             }
+            if (filterCategory) {
+                result = result.filter(p => p.category === filterCategory);
+            }
+            if (filterCollege) {
+                result = result.filter(p => p.author_college === filterCollege);
+            }
+            if (filterFavorites) {
+                result = result.filter(p => favoritedPostIds.includes(p.id));
+            }
             if (searchQuery) {
                 result = result.filter(p =>
                     p.title.toLowerCase().includes(searchQuery) ||
-                    p.content.toLowerCase().includes(searchQuery)
+                    p.content.toLowerCase().includes(searchQuery) ||
+                    (p.author_college || '').toLowerCase().includes(searchQuery)
                 );
             }
             if (currentFilter === 'hot') {
@@ -790,7 +927,8 @@
 
         function createPostHTML(post) {
             const cat = categories[post.category];
-            const isMine = post.author_id === currentUserId;
+            const isMine = post.author_id === getAuthorId();
+            const isFavorited = favoritedPostIds.includes(post.id);
             return `
                 <article class="post-card bg-white rounded-2xl shadow-sm p-5 cursor-pointer" onclick="openPostDetail(${post.id})">
                     <div class="flex items-start gap-4">
@@ -826,6 +964,10 @@
                                     <i class="far fa-eye"></i>
                                     <span>${post.views}</span>
                                 </span>
+                                <button class="flex items-center gap-1.5 hover:text-yellow-500 transition-colors ${isFavorited ? 'text-yellow-500' : ''}" onclick="event.stopPropagation(); toggleFavorite(${post.id})">
+                                    <i class="${isFavorited ? 'fas' : 'far'} fa-star"></i>
+                                    <span>${isFavorited ? '已收藏' : '收藏'}</span>
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -899,13 +1041,15 @@
         async function openPostDetail(postId) {
             const post = posts.find(p => p.id === postId);
             if (!post) return;
+            clearReplyState();
             await incrementViews(postId);
 
             const cat = categories[post.category];
             const detailContent = document.getElementById('detailContent');
             const commenterName = userProfile.name && userProfile.name.trim() ? userProfile.name.trim() : '匿名';
             const commenterChar = commenterName.charAt(0);
-            const isMine = post.author_id === currentUserId;
+            const isMine = post.author_id === getAuthorId();
+            const isFavorited = favoritedPostIds.includes(post.id);
 
             detailContent.innerHTML = `
                 <div class="p-6">
@@ -935,6 +1079,10 @@
                         <span class="flex items-center gap-2 text-gray-400 text-sm">
                             <i class="far fa-eye"></i> ${post.views} 浏览
                         </span>
+                        <button onclick="toggleFavorite(${post.id}); openPostDetail(${post.id})" class="flex items-center gap-2 px-4 py-2 rounded-xl border transition-all ${isFavorited ? 'border-yellow-200 bg-yellow-50 text-yellow-500' : 'border-gray-200 hover:border-yellow-200 hover:bg-yellow-50 text-gray-500'}">
+                            <i class="${isFavorited ? 'fas' : 'far'} fa-star"></i>
+                            <span class="font-medium">${isFavorited ? '已收藏' : '收藏'}</span>
+                        </button>
                         ${isMine || isAdmin ? `<button onclick="event.stopPropagation(); deletePost(${post.id})" class="ml-auto text-red-500 hover:text-red-700 text-sm font-medium"><i class="fas fa-trash-alt mr-1"></i>删除</button>` : ''}
                     </div>
                 </div>
@@ -955,7 +1103,8 @@
                                             <span>${c.likes}</span>
                                         </button>
                                     </div>
-                                    <p class="text-sm text-gray-600">${c.content}</p>
+                                    <p class="text-sm text-gray-600">${c.reply_to_name ? `回复${c.reply_to_name}同学：${c.content}` : c.content}</p>
+                                    <button onclick="startReply(${c.id}, '${(c.author || '匿名').replace(/'/g, "\\'")}', ${post.id})" class="text-xs text-purple-600 hover:text-purple-800 mt-1">回复</button>
                                 </div>
                             </div>
                         `).join('') : '<p class="text-gray-400 text-sm text-center py-4">暂无评论，快来抢沙发吧！</p>'}
@@ -992,15 +1141,32 @@
             const commenterName = userProfile.name && userProfile.name.trim() ? userProfile.name.trim() : '匿名';
 
             try {
-                const { error } = await supabaseClient.from('comments').insert({
+                const payload = {
                     post_id: postId,
                     author_name: commenterName,
-                    author_id: currentUserId,
+                    author_id: getAuthorId(),
                     author_college: userProfile.college || '',
                     author_gender: userProfile.gender || '',
                     is_admin: isAdmin,
                     content: content
-                });
+                };
+                if (replyingToCommentId && replyingToPostId === postId) {
+                    payload.parent_id = replyingToCommentId;
+                    payload.reply_to_name = replyingToAuthorName || '匿名';
+                }
+                let { error } = await supabaseClient.from('comments').insert(payload);
+                if (error && error.message) {
+                    if (error.message.includes('parent_id')) {
+                        delete payload.parent_id;
+                    }
+                    if (error.message.includes('reply_to_name')) {
+                        delete payload.reply_to_name;
+                    }
+                    if (error.message.includes('parent_id') || error.message.includes('reply_to_name')) {
+                        const retry = await supabaseClient.from('comments').insert(payload);
+                        error = retry.error;
+                    }
+                }
                 if (error) {
                     showToast('评论失败: ' + error.message, 'error');
                     return;
@@ -1012,6 +1178,9 @@
             }
 
             input.value = '';
+            if (replyingToCommentId && replyingToPostId === postId) {
+                clearReplyState();
+            }
             showToast('评论发布成功', 'success');
             await loadComments();
             openPostDetail(postId);
@@ -1042,7 +1211,7 @@
                     content: content,
                     category: category,
                     author_name: displayName,
-                    author_id: currentUserId,
+                    author_id: getAuthorId(),
                     author_college: userProfile.college || '',
                     author_gender: userProfile.gender || '',
                     is_admin: isAdmin,
@@ -1069,7 +1238,7 @@
         async function deletePost(postId) {
             const post = posts.find(p => p.id === postId);
             if (!post) return;
-            if (post.author_id !== currentUserId && !isAdmin) {
+            if (post.author_id !== getAuthorId() && !isAdmin) {
                 showToast('无权删除', 'error');
                 return;
             }
@@ -1151,18 +1320,30 @@
             const oldName = userProfile.name;
             const oldCollege = userProfile.college;
             const oldGender = userProfile.gender;
+            const oldAuthorId = getAuthorId();
             userProfile = { name, studentId, college, gender };
             saveLocalProfile();
+            const newAuthorId = getAuthorId();
 
             updateNavAvatar();
             closeModal('profileModal');
             showToast('个人信息保存成功', 'success');
 
-            if (name !== oldName || college !== oldCollege || gender !== oldGender) {
+            const needsMigration = oldAuthorId !== newAuthorId;
+
+            if (name !== oldName || college !== oldCollege || gender !== oldGender || needsMigration) {
+                const updatePayload = { author_name: name, author_college: college, author_gender: gender };
+                if (needsMigration) {
+                    updatePayload.author_id = newAuthorId;
+                }
                 Promise.all([
-                    supabaseClient.from('posts').update({ author_name: name, author_college: college, author_gender: gender }).eq('author_id', currentUserId),
-                    supabaseClient.from('comments').update({ author_name: name, author_college: college, author_gender: gender }).eq('author_id', currentUserId)
+                    supabaseClient.from('posts').update(updatePayload).eq('author_id', oldAuthorId),
+                    supabaseClient.from('comments').update(updatePayload).eq('author_id', oldAuthorId)
                 ]).then(() => {
+                    if (needsMigration) {
+                        posts.forEach(p => { if (p.author_id === oldAuthorId) p.author_id = newAuthorId; });
+                        allComments.forEach(c => { if (c.author_id === oldAuthorId) c.author_id = newAuthorId; });
+                    }
                     loadPosts();
                 }).catch(err => {
                     console.error('同步历史数据失败', err);
@@ -1180,7 +1361,7 @@
         }
 
         // ==================== 通知 ====================
-        function addNotification(type, post) {
+        function addNotification(type, post, customMessage) {
             const enabled = document.getElementById('notifSetting');
             if (enabled && !enabled.checked) return;
             const notif = {
@@ -1189,7 +1370,8 @@
                 title: post.title,
                 postId: post.id,
                 time: '刚刚',
-                read: false
+                read: false,
+                message: customMessage || '回复了你的帖子'
             };
             notifications.unshift(notif);
             renderNotifications();
@@ -1219,7 +1401,7 @@
                         </div>
                         <div class="flex-1 min-w-0">
                             <p class="text-sm text-gray-800 leading-snug mb-1">
-                                <span class="font-bold">有人</span> 回复了你的帖子 <span class="font-medium text-purple-700">《${n.title}》</span>
+                                <span class="font-bold">有人</span> ${n.message} <span class="font-medium text-purple-700">《${n.title}》</span>
                             </p>
                             <div class="flex items-center gap-2">
                                 <span class="text-xs text-gray-400">${n.time}</span>
