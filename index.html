@@ -167,12 +167,8 @@
                     <!-- 帖子由 JS 动态生成 -->
                 </div>
 
-                <!-- 加载更多 -->
-                <div class="mt-6 text-center">
-                    <button id="loadMoreBtn" class="px-6 py-2.5 bg-white text-gray-600 rounded-xl shadow-sm hover:shadow-md transition-all text-sm font-medium border border-gray-200">
-                        加载更多 <i class="fas fa-chevron-down ml-1"></i>
-                    </button>
-                </div>
+                <!-- 分页 -->
+                <div id="pagination" class="mt-6 flex items-center justify-center gap-2 flex-wrap"></div>
             </main>
 
             <!-- 右侧边栏 -->
@@ -387,6 +383,11 @@
         let replyingToPostId = null;
         let replyingToAuthorName = null;
 
+        let currentPage = 1;
+        const postsPerPage = 5;
+        let isLoading = false;
+        let loadError = null;
+
         let currentUserId = localStorage.getItem('nku-forum-user-id');
         if (!currentUserId) {
             currentUserId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -498,45 +499,54 @@
 
         // ==================== 数据加载 ====================
         async function loadPosts() {
-            const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-            const { data, error } = await supabaseClient
-                .from('posts')
-                .select('*')
-                .gt('created_at', thirtyDaysAgo)
-                .order('created_at', { ascending: false });
-
-            if (error) {
-                console.error('加载帖子失败', error);
-                showToast('加载数据失败: ' + error.message, 'error');
-                return;
-            }
-
-            posts = (data || []).map(p => ({
-                id: p.id,
-                author: p.author_name,
-                avatar: p.author_name ? p.author_name.charAt(0) : '匿',
-                avatarColor: 'bg-gradient-to-br from-purple-500 to-indigo-600 text-white',
-                category: p.category,
-                title: p.title,
-                content: p.content,
-                time: formatTime(p.created_at),
-                likes: p.likes || 0,
-                views: p.views || 0,
-                comments: 0,
-                liked: likedPostIds.includes(p.id),
-                isTop: false,
-                author_id: p.author_id,
-                author_college: p.author_college || '',
-                author_gender: p.author_gender || '',
-                is_admin: p.is_admin || false,
-                created_at: p.created_at,
-                commentList: []
-            }));
-
-            await loadComments();
+            isLoading = true;
+            loadError = null;
             renderPosts();
-            renderHotTopics();
-            renderLeaderboard();
+
+            const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+            try {
+                const { data, error } = await supabaseClient
+                    .from('posts')
+                    .select('*')
+                    .gt('created_at', thirtyDaysAgo)
+                    .order('created_at', { ascending: false });
+
+                if (error) {
+                    throw error;
+                }
+
+                posts = (data || []).map(p => ({
+                    id: p.id,
+                    author: p.author_name,
+                    avatar: p.author_name ? p.author_name.charAt(0) : '匿',
+                    avatarColor: 'bg-gradient-to-br from-purple-500 to-indigo-600 text-white',
+                    category: p.category,
+                    title: p.title,
+                    content: p.content,
+                    time: formatTime(p.created_at),
+                    likes: p.likes || 0,
+                    views: p.views || 0,
+                    comments: 0,
+                    liked: likedPostIds.includes(p.id),
+                    isTop: false,
+                    author_id: p.author_id,
+                    author_college: p.author_college || '',
+                    author_gender: p.author_gender || '',
+                    is_admin: p.is_admin || false,
+                    created_at: p.created_at,
+                    commentList: []
+                }));
+
+                await loadComments();
+                renderHotTopics();
+                renderLeaderboard();
+            } catch (err) {
+                console.error('加载帖子失败', err);
+                loadError = err;
+            } finally {
+                isLoading = false;
+                renderPosts();
+            }
         }
 
         async function loadComments() {
@@ -656,6 +666,7 @@
                     e.target.classList.add('active', 'bg-purple-700', 'text-white');
                     e.target.classList.remove('text-gray-600', 'hover:bg-gray-100');
                     currentFilter = e.target.dataset.filter;
+                    currentPage = 1;
                     renderPosts();
                 });
             });
@@ -670,29 +681,30 @@
                     item.classList.add('active');
                     item.classList.remove('text-gray-600');
                     currentCategory = item.dataset.cat;
+                    currentPage = 1;
                     renderPosts();
                 });
             });
 
             document.getElementById('searchInput').addEventListener('input', (e) => {
                 searchQuery = e.target.value.toLowerCase();
+                currentPage = 1;
                 renderPosts();
-            });
-
-            document.getElementById('loadMoreBtn').addEventListener('click', () => {
-                showToast('已加载更多帖子', 'info');
             });
 
             document.getElementById('filterCategory').addEventListener('change', (e) => {
                 filterCategory = e.target.value;
+                currentPage = 1;
                 renderPosts();
             });
             document.getElementById('filterCollege').addEventListener('change', (e) => {
                 filterCollege = e.target.value;
+                currentPage = 1;
                 renderPosts();
             });
             document.getElementById('filterFavorites').addEventListener('change', (e) => {
                 filterFavorites = e.target.checked;
+                currentPage = 1;
                 renderPosts();
             });
         }
@@ -701,6 +713,7 @@
             filterCategory = '';
             filterCollege = '';
             filterFavorites = false;
+            currentPage = 1;
             document.getElementById('filterCategory').value = '';
             document.getElementById('filterCollege').value = '';
             document.getElementById('filterFavorites').checked = false;
@@ -741,6 +754,31 @@
 
         function renderPosts() {
             const container = document.getElementById('postList');
+            const paginationContainer = document.getElementById('pagination');
+
+            if (isLoading) {
+                container.innerHTML = `
+                    <div class="bg-white rounded-2xl shadow-sm p-12 text-center">
+                        <i class="fas fa-spinner fa-spin text-4xl text-purple-300 mb-3"></i>
+                        <p class="text-gray-500">正在加载帖子...</p>
+                    </div>
+                `;
+                paginationContainer.innerHTML = '';
+                return;
+            }
+
+            if (loadError) {
+                container.innerHTML = `
+                    <div class="bg-white rounded-2xl shadow-sm p-12 text-center">
+                        <i class="fas fa-exclamation-circle text-4xl text-red-300 mb-3"></i>
+                        <p class="text-gray-500 mb-2">加载失败，请检查网络</p>
+                        <button onclick="loadPosts()" class="px-4 py-2 bg-purple-700 text-white rounded-xl text-sm hover:bg-purple-800 transition-colors">重新加载</button>
+                    </div>
+                `;
+                paginationContainer.innerHTML = '';
+                return;
+            }
+
             const filtered = getFilteredPosts();
             if (filtered.length === 0) {
                 container.innerHTML = `
@@ -749,9 +787,99 @@
                         <p class="text-gray-500">没有找到相关帖子</p>
                     </div>
                 `;
+                paginationContainer.innerHTML = '';
                 return;
             }
-            container.innerHTML = filtered.map(post => createPostHTML(post)).join('');
+
+            const totalPages = Math.ceil(filtered.length / postsPerPage);
+            if (currentPage > totalPages) currentPage = totalPages;
+            const start = (currentPage - 1) * postsPerPage;
+            const pagePosts = filtered.slice(start, start + postsPerPage);
+
+            container.innerHTML = pagePosts.map(post => createPostHTML(post)).join('');
+            renderPagination(currentPage, totalPages);
+        }
+
+        function renderPagination(current, total) {
+            const container = document.getElementById('pagination');
+            if (total <= 1) {
+                container.innerHTML = '';
+                return;
+            }
+
+            let html = '';
+
+            // 上一页
+            html += `
+                <button onclick="goToPage(${current - 1})" ${current === 1 ? 'disabled' : ''}
+                    class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${current === 1 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 hover:bg-gray-100 bg-white border border-gray-200'}">
+                    上一页
+                </button>
+            `;
+
+            // 页码
+            const maxVisible = 5;
+            let startPage = Math.max(1, current - Math.floor(maxVisible / 2));
+            let endPage = Math.min(total, startPage + maxVisible - 1);
+            if (endPage - startPage + 1 < maxVisible) {
+                startPage = Math.max(1, endPage - maxVisible + 1);
+            }
+
+            if (startPage > 1) {
+                html += `<button onclick="goToPage(1)" class="px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 bg-white border border-gray-200">1</button>`;
+                if (startPage > 2) html += `<span class="px-2 text-gray-400">...</span>`;
+            }
+
+            for (let i = startPage; i <= endPage; i++) {
+                html += `
+                    <button onclick="goToPage(${i})"
+                        class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${i === current ? 'bg-purple-700 text-white' : 'text-gray-600 hover:bg-gray-100 bg-white border border-gray-200'}">
+                        ${i}
+                    </button>
+                `;
+            }
+
+            if (endPage < total) {
+                if (endPage < total - 1) html += `<span class="px-2 text-gray-400">...</span>`;
+                html += `<button onclick="goToPage(${total})" class="px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 bg-white border border-gray-200">${total}</button>`;
+            }
+
+            // 下一页
+            html += `
+                <button onclick="goToPage(${current + 1})" ${current === total ? 'disabled' : ''}
+                    class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${current === total ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 hover:bg-gray-100 bg-white border border-gray-200'}">
+                    下一页
+                </button>
+            `;
+
+            // 跳转输入框
+            html += `
+                <div class="flex items-center gap-2 ml-2">
+                    <span class="text-sm text-gray-500">跳至</span>
+                    <input type="number" id="jumpPageInput" min="1" max="${total}" value="${current}"
+                        class="w-14 px-2 py-1.5 text-center text-sm border border-gray-200 rounded-lg outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+                        onkeypress="if(event.key==='Enter') jumpToPage()">
+                    <button onclick="jumpToPage()" class="px-3 py-1.5 text-sm text-purple-600 hover:bg-purple-50 rounded-lg transition-colors border border-purple-200">跳转</button>
+                </div>
+            `;
+
+            container.innerHTML = html;
+        }
+
+        function goToPage(page) {
+            const filtered = getFilteredPosts();
+            const totalPages = Math.ceil(filtered.length / postsPerPage);
+            if (page < 1 || page > totalPages) return;
+            currentPage = page;
+            renderPosts();
+            document.getElementById('postList').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function jumpToPage() {
+            const input = document.getElementById('jumpPageInput');
+            const page = parseInt(input.value, 10);
+            if (isNaN(page)) return;
+            goToPage(page);
         }
 
         function renderHotTopics() {
