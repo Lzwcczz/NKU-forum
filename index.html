@@ -134,15 +134,6 @@
 
                 <!-- 高级筛选 -->
                 <div class="bg-white rounded-2xl shadow-sm p-3 mb-4 flex flex-wrap gap-3 items-center">
-                    <select id="filterCategory" class="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200">
-                        <option value="">全部类型</option>
-                        <option value="homework">作业讨论</option>
-                        <option value="algorithm">算法分享</option>
-                        <option value="material">学习资料</option>
-                        <option value="qa">疑难解答</option>
-                        <option value="notice">课程通知</option>
-                        <option value="exam">考试复习</option>
-                    </select>
                     <select id="filterCollege" class="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200">
                         <option value="">全部学院</option>
                         <option value="计算机学院">计算机学院</option>
@@ -374,7 +365,6 @@
         let currentCategory = 'all';
         let searchQuery = '';
 
-        let filterCategory = '';
         let filterCollege = '';
         let filterFavorites = false;
         let favoritedPostIds = [];
@@ -692,11 +682,6 @@
                 renderPosts();
             });
 
-            document.getElementById('filterCategory').addEventListener('change', (e) => {
-                filterCategory = e.target.value;
-                currentPage = 1;
-                renderPosts();
-            });
             document.getElementById('filterCollege').addEventListener('change', (e) => {
                 filterCollege = e.target.value;
                 currentPage = 1;
@@ -710,11 +695,9 @@
         }
 
         function resetFilters() {
-            filterCategory = '';
             filterCollege = '';
             filterFavorites = false;
             currentPage = 1;
-            document.getElementById('filterCategory').value = '';
             document.getElementById('filterCollege').value = '';
             document.getElementById('filterFavorites').checked = false;
             renderPosts();
@@ -725,9 +708,6 @@
             let result = [...posts];
             if (currentCategory !== 'all') {
                 result = result.filter(p => p.category === currentCategory);
-            }
-            if (filterCategory) {
-                result = result.filter(p => p.category === filterCategory);
             }
             if (filterCollege) {
                 result = result.filter(p => p.author_college === filterCollege);
